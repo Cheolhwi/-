@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>涮火锅时间</title>
+  <style>
+    :root{
+      --brand:#12a7ff;
+      --chip:#f3f6f9;
+      --chip-text:#26323f;
+      --chip-hover:#e8f6ff;
+      --ok:#24c08e;
+      --warn:#f59e0b;
+      --danger:#ef4444;
+      /* 把你自己的图片放进 assets/ 目录，然后改下面这些路径 */
+      --left-img: url("assets/anime-left.png");
+      --right-img:url("assets/anime-right.png");
+      --bottom-strip:url("assets/anime-strip.png"); /* 可用你发的六宫格图 */
+    }
+    html,body{height:100%;}
+    body{margin:0;font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Emoji; background:#fff; color:#193041;}
+    .container{max-width:980px;margin:32px auto;padding:0 16px 96px;position:relative;}
+    h1{font-size:44px;margin:0 0 20px;color:var(--brand);letter-spacing:.02em}
+
+    /* 顶部切换 */
+    .tabs{display:flex;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+    .tab{border:1px solid #dbe3ec;background:white;padding:6px 12px;border-radius:10px;cursor:pointer}
+    .tab.active{background:var(--brand);color:white;border-color:var(--brand)}
+
+    /* 类别与食材 */
+    .sec{margin:14px 0 2px; color:#576b7f}
+    .chips{display:flex;flex-wrap:wrap;gap:10px}
+    .chip{background:var(--chip);color:var(--chip-text);border:1px solid #e6edf3; padding:6px 10px;border-radius:10px;cursor:pointer}
+    .chip:hover{background:var(--chip-hover)}
+
+    /* 工具条 */
+    .toolbar{display:flex;gap:10px;margin:10px 0;flex-wrap:wrap;align-items:center}
+    .btn{border:1px solid #dbe3ec;background:white;padding:6px 12px;border-radius:10px;cursor:pointer}
+    .btn.primary{background:var(--brand);border-color:var(--brand);color:#fff}
+    .btn.danger{border-color:#ffd6d6;background:#ffefef;color:#b42318}
+    input[type="text"],input[type="number"]{border:1px solid #dbe3ec;border-radius:8px;padding:6px 10px}
+
+    /* 计时列表 */
+    .list{margin-top:8px;display:flex;flex-direction:column;gap:10px}
+    .card{border:1px solid #e6edf3;border-radius:14px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:12px;background:#fff}
+    .card .name{font-weight:600}
+    .pill{padding:3px 10px;border-radius:999px;border:1px solid #e6edf3;background:#f9fbfd;font-size:12px}
+    .countdown{font-variant-numeric:tabular-nums}
+    .state.ok{color:var(--ok)}
+    .state.warn{color:var(--warn)}
+    .state.danger{color:var(--danger)}
+
+    /* —— 装饰：底边 & 左右边的动漫头像 —— */
+    .bottom-strip{position:fixed;left:0;right:0;bottom:0;height:72px;pointer-events:none; opacity:.9;
+      background-image:var(--bottom-strip);background-size:auto 72px;background-repeat:repeat-x;background-position:bottom center;}
+    .side{position:fixed;bottom:32px;width:110px;height:220px;pointer-events:none;opacity:.95;}
+    .side.left{left:-8px; background-image:var(--left-img); background-size:contain;background-position:bottom left;background-repeat:no-repeat;}
+    .side.right{right:-8px;background-image:var(--right-img);background-size:contain;background-position:bottom right;background-repeat:no-repeat;}
+
+    /* 小屏适配 */
+    @media (max-width:640px){
+      h1{font-size:32px}
+      .side{width:80px;height:160px;opacity:.9}
+      .bottom-strip{height:60px;background-size:auto 60px}
+    }
+
+    /* 轻提示 */
+    .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:96px;background:#111;color:#fff;padding:10px 14px;border-radius:12px;opacity:0;transition:.25s;pointer-events:none}
+    .toast.show{opacity:1;}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>涮火锅时间</h1>
+
+    <div class="tabs" id="modeTabs">
+      <button class="tab active" data-mode="category">按种类分</button>
+      <button class="tab" data-mode="time">按时间分</button>
+    </div>
+
+    <div id="panels"></div>
+
+    <div class="toolbar">
+      <button class="btn" id="clearAll">全部清空</button>
+      <div style="flex:1"></div>
+      <input id="customName" placeholder="名字" type="text" />
+      <input id="customSecs" placeholder="时间（秒）" type="number" min="1" style="width:120px"/>
+      <button class="btn primary" id="addCustom">添加</button>
+    </div>
+
+    <div class="list" id="activeList"></div>
+    <div style="height:16px"></div>
+    <p style="color:#7c8b99;font-size:13px">※ 各类食材因厚薄/火力不同，时间仅供参考～</p>
+  </div>
+
+  <!-- 装饰头像：把图片放到 assets/ 并匹配 CSS 变量即可生效 -->
+  <div class="bottom-strip" aria-hidden="true"></div>
+  <div class="side left" aria-hidden="true"></div>
+  <div class="side right" aria-hidden="true"></div>
+  <div class="toast" id="toast">可以吃啦！(≧▽≦)</div>
+
+  <script>
+    // ===== 数据：你可按需微调 =====
+    const DATA = {
+      "肉类": {
+        "肥牛": 12, "肥羊": 12, "老肉片": 18, "牛肉丸": 240, "无骨凤爪": 420, "鹌鹑蛋": 240
+      },
+      "内杂": {
+        "肥肠": 600, "鹅肠": 35, "鸭胗": 180, "鸭血": 90, "牛舌": 35, "毛肚": 12, "脑花": 240
+      },
+      "水产": {
+        "生蚝": 90, "虾": 120, "虾滑": 80, "蟹肉棒": 60, "巴沙鱼": 90, "泥鳅": 240
+      },
+      "青菜": {
+        "海带": 120, "青菜": 45, "菜花": 90, "土豆": 240
+      },
+      "其它": {
+        "香菇": 120, "菌类": 90, "金针菇": 75, "竹笋": 120, "木耳": 90, "豆芽": 60, "豆干": 120
+      }
+    };
+
+    // ===== 状态 =====
+    const state = { list: [], mode: 'category', ticker: null };
+
+    // ===== UI 构建 =====
+    const panelsEl = document.getElementById('panels');
+
+    function buildPanels(){
+      panelsEl.innerHTML = '';
+      if(state.mode==='category'){
+        for(const [cat, items] of Object.entries(DATA)){
+          const sec = document.createElement('div');
+          sec.innerHTML = `<div class="sec">${cat}</div>`;
+          const wrap = document.createElement('div');
+          wrap.className = 'chips';
+          for(const [name, secs] of Object.entries(items)){
+            const chip = document.createElement('button');
+            chip.className = 'chip';
+            chip.textContent = name;
+            chip.title = `${secs}s`;
+            chip.onclick = ()=> addTimer(name, secs);
+            wrap.appendChild(chip);
+          }
+          sec.appendChild(wrap);
+          panelsEl.appendChild(sec);
+        }
+      }else{
+        // 按时间分：把所有食材展开并按秒排序
+        const flat = [];
+        for(const [_, items] of Object.entries(DATA)){
+          for(const [name, secs] of Object.entries(items)) flat.push({name, secs});
+        }
+        flat.sort((a,b)=>a.secs-b.secs);
+        let last=-1; let group;
+        flat.forEach((it,i)=>{
+          if(Math.floor(it.secs/60)!==last){
+            last=Math.floor(it.secs/60);
+            group=document.createElement('div');
+            group.innerHTML=`<div class="sec">约 ${last? last+" 分":"1 分内"}</div>`;
+            group.classList.add('chips-wrap');
+            const wrap=document.createElement('div');wrap.className='chips';group.appendChild(wrap);
+            panelsEl.appendChild(group);
+          }
+          const wrap = group.querySelector('.chips');
+          const chip=document.createElement('button');
+          chip.className='chip'; chip.textContent=`${it.name} · ${it.secs}s`;
+          chip.onclick=()=>addTimer(it.name,it.secs);
+          wrap.appendChild(chip);
+        })
+      }
+    }
+
+    buildPanels();
+
+    // 顶部切换
+    document.getElementById('modeTabs').addEventListener('click', e=>{
+      const btn=e.target.closest('.tab'); if(!btn) return;
+      document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'))
+      btn.classList.add('active');
+      state.mode = btn.dataset.mode; buildPanels();
+    })
+
+    // 自定义添加
+    document.getElementById('addCustom').onclick = ()=>{
+      const name = document.getElementById('customName').value.trim();
+      const secs = parseInt(document.getElementById('customSecs').value,10);
+      if(!name||!secs||secs<=0) return;
+      addTimer(name, secs);
+      document.getElementById('customName').value='';
+      document.getElementById('customSecs').value='';
+    }
+
+    // 清空
+    document.getElementById('clearAll').onclick = ()=>{ state.list=[]; renderList(); }
+
+    // 新增一个计时器
+    function addTimer(name, secs){
+      const now = Date.now();
+      state.list.push({ id:crypto.randomUUID(), name, secs, start:now, end:now+secs*1000, done:false });
+      renderList();
+      toast(`${name} 已加入：${secs}s`);
+      tick();
+    }
+
+    // 渲染列表
+    const listEl = document.getElementById('activeList');
+    function renderList(){
+      listEl.innerHTML = '';
+      state.list.forEach(item=>{
+        const left = Math.max(0, Math.ceil((item.end-Date.now())/1000));
+        const card = document.createElement('div');
+        card.className='card';
+        const st = left===0? 'ok': left<=10? 'danger' : left<=30? 'warn' : '';
+        card.innerHTML = `
+          <div style="display:flex;align-items:center;gap:10px;min-width:0">
+            <span class="pill">${item.secs}s</span>
+            <span class="name">${item.name}</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <span class="countdown state ${st}">${format(left)}</span>
+            <button class="btn" data-act="reset">重计</button>
+            <button class="btn danger" data-act="remove">删除</button>
+          </div>`;
+        card.querySelector('[data-act="remove"]').onclick=()=>{
+          state.list = state.list.filter(x=>x.id!==item.id); renderList();
+        }
+        card.querySelector('[data-act="reset"]').onclick=()=>{
+          const now = Date.now(); item.start=now; item.end=now+item.secs*1000; item.done=false; renderList();
+        }
+        listEl.appendChild(card);
+      })
+    }
+
+    // 倒计时循环
+    function tick(){
+      if(state.ticker) return; // 只开一个循环
+      state.ticker = setInterval(()=>{
+        let changed=false;
+        state.list.forEach(it=>{
+          const left = it.end - Date.now();
+          if(!it.done && left<=0){ it.done=true; changed=true; toast(`${it.name} 可以吃啦 (≧▽≦)`); }
+        })
+        if(changed) renderList();
+        // 更新数字（轻量：直接每秒重渲染）
+        const needs = document.querySelectorAll('.countdown');
+        state.list.forEach((it,idx)=>{ if(needs[idx]){
+          const left = Math.max(0, Math.ceil((it.end-Date.now())/1000));
+          const el = needs[idx];
+          el.textContent = format(left);
+          el.className = 'countdown state ' + (left===0? 'ok': left<=10? 'danger' : left<=30? 'warn' : '');
+        }})
+      }, 1000);
+    }
+
+    function format(s){
+      const m = Math.floor(s/60), ss = s%60; return (m? m+':':'' ) + String(ss).padStart(2,'0')
+    }
+
+    // 轻提示
+    const toastEl = document.getElementById('toast');
+    let toastTimer=null;
+    function toast(text){
+      toastEl.textContent = text; toastEl.classList.add('show');
+      clearTimeout(toastTimer); toastTimer=setTimeout(()=>toastEl.classList.remove('show'), 1600);
+    }
+  </script>
+
+  <!--
+  使用说明（提交到 GitHub Pages）
+  1) 在此文件同级目录新建 assets/ 并放入三张图片：
+     - anime-left.png   （左下角立绘）
+     - anime-right.png  （右下角立绘）
+     - anime-strip.png  （底边平铺条，建议高 72px，可直接用你提供的六宫格图）
+  2) 如需改路径，修改上面的 CSS 变量 --left-img / --right-img / --bottom-strip。
+  3) 修改 DATA 中各食材的时间即可定制；单位为秒。
+  4) 直接把本文件命名为 index.html 放进你的 repo，开启 GitHub Pages（main/docs 任一）。
+  -->
+</body>
+</html>
